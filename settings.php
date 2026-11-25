@@ -87,7 +87,27 @@ if ($ADMIN->fulltree) {
         new lang_string('responseformat', 'qtype_aitext'),
         new lang_string('responseformat_setting', 'qtype_aitext'),
         'plain',
-        ['plain' => 'plain', 'editor' => 'editor', 'monospaced' => 'monospaced']
+        ['plain' => 'plain', 'editor' => 'editor', 'monospaced' => 'monospaced', 'audio' => 'audio']
+    ));
+    $settings->add(new admin_setting_configselect(
+        'qtype_aitext/responselanguage',
+        new lang_string('responselanguage', 'qtype_aitext'),
+        new lang_string('responselanguage_setting', 'qtype_aitext'),
+        \qtype_aitext\constants::DEFAULT_LANGUAGE,
+        \qtype_aitext\constants::get_languages()
+    ));
+    $settings->add(new admin_setting_configselect(
+        'qtype_aitext/maxtime',
+        new lang_string('maxtime', 'qtype_aitext'),
+        new lang_string('maxtime_setting', 'qtype_aitext'),
+        60,
+        \qtype_aitext\constants::get_time_limits()
+    ));
+    $settings->add(new admin_setting_configcheckbox(
+        'qtype_aitext/punctuatetranscripts',
+        new lang_string('punctuatetranscripts', 'qtype_aitext'),
+        new lang_string('punctuatetranscripts_setting', 'qtype_aitext'),
+        1
     ));
     // Define the choices for the radio buttons.
     $backends = [

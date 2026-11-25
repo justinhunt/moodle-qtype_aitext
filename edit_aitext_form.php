@@ -23,6 +23,8 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+use qtype_aitext\constants;
+
  /**
   * aitext question type editing form.
   *
@@ -170,12 +172,38 @@ class qtype_aitext_edit_form extends question_edit_form {
 
         $mform->addElement(
             'select',
+            'responselanguage',
+            get_string('responselanguage', 'qtype_aitext'),
+            constants::get_languages()
+        );
+        $mform->setDefault(
+            'responselanguage',
+            $this->get_default_value(
+                'responselanguage',
+                get_config('qtype_aitext', 'responselanguage') ?: constants::DEFAULT_LANGUAGE
+            )
+        );
+        $mform->addHelpButton('responselanguage', 'responselanguage', 'qtype_aitext');
+        $mform->hideIf('responselanguage', 'responseformat', 'neq', 'audio');
+
+        $mform->addElement(
+            'select',
+            'maxtime',
+            get_string('maxtime', 'qtype_aitext'),
+            constants::get_time_limits()
+        );
+        $mform->setDefault('maxtime', $this->get_default_value('maxtime', (int) get_config('qtype_aitext', 'maxtime')));
+        $mform->addHelpButton('maxtime', 'maxtime', 'qtype_aitext');
+        $mform->hideIf('maxtime', 'responseformat', 'neq', 'audio');
+
+        $mform->addElement(
+            'select',
             'responsefieldlines',
             get_string('responsefieldlines', 'qtype_aitext'),
             $qtype->response_sizes()
         );
         $mform->setDefault('responsefieldlines', $this->get_default_value('responsefieldlines', 10));
-        $mform->hideIf('responsefieldlines', 'responseformat', 'eq', 'noinline');
+        $mform->hideIf('responsefieldlines', 'responseformat', 'eq', 'audio');
 
         // Create a text box that can be enabled/disabled for max/min word limits options.
         $wordlimitoptions = ['size' => '6', 'maxlength' => '6'];
@@ -186,7 +214,7 @@ class qtype_aitext_edit_form extends question_edit_form {
         $mform->addGroup($mingrp, 'mingroup', get_string('minwordlimit', 'qtype_aitext'), ' ', false);
         $mform->addHelpButton('mingroup', 'minwordlimit', 'qtype_aitext');
         $mform->disabledIf('minwordlimit', 'minwordenabled', 'notchecked');
-        $mform->hideIf('mingroup', 'responseformat', 'eq', 'noinline');
+        $mform->hideIf('mingroup', 'responseformat', 'eq', 'audio');
 
         $maxgrp[] = $mform->createElement('text', 'maxwordlimit', '', $wordlimitoptions);
         $mform->setType('maxwordlimit', PARAM_INT);
@@ -195,7 +223,7 @@ class qtype_aitext_edit_form extends question_edit_form {
         $mform->addGroup($maxgrp, 'maxgroup', get_string('maxwordlimit', 'qtype_aitext'), ' ', false);
         $mform->addHelpButton('maxgroup', 'maxwordlimit', 'qtype_aitext');
         $mform->disabledIf('maxwordlimit', 'maxwordenabled', 'notchecked');
-        $mform->hideIf('maxgroup', 'responseformat', 'eq', 'noinline');
+        $mform->hideIf('maxgroup', 'responseformat', 'eq', 'audio');
 
         $mform->addElement('header', 'responsetemplateheader', get_string('responsetemplateheader', 'qtype_aitext'));
         $mform->addElement(
@@ -206,6 +234,7 @@ class qtype_aitext_edit_form extends question_edit_form {
             array_merge($this->editoroptions, ['maxfiles' => 0])
         );
         $mform->addHelpButton('responsetemplate', 'responsetemplate', 'qtype_aitext');
+        $mform->hideIf('responsetemplate', 'responseformat', 'eq', 'audio');
 
         $mform->addElement('header', 'graderinfoheader', get_string('graderinfoheader', 'qtype_aitext'));
         $mform->setExpanded('graderinfoheader');
@@ -271,6 +300,8 @@ class qtype_aitext_edit_form extends question_edit_form {
         $question->maxwordlimit = $question->options->maxwordlimit;
         $question->aiprompt = $question->options->aiprompt;
         $question->spellcheck = $question->options->spellcheck;
+        $question->responselanguage = $question->options->responselanguage;
+        $question->maxtime = $question->options->maxtime;
         // Make the count start from 0 like the repeat array elements.
         $question->sampleresponses = [];
         foreach ($question->options->sampleresponses as $sampleresponse) {

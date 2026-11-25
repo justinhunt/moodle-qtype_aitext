@@ -1,0 +1,87 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template qtype_aitext/audiorecorder
+
+    Audio recorder response area. The recording is transcribed in the browser (or by the
+    speech recognition service at asrurl) and the transcript is written to the hidden answer
+    input, so it is graded as a normal text response.
+
+    Context variables required for this template:
+    * id - id of the hidden answer input
+    * inputname - name of the hidden answer input
+    * safeid - id with characters that are not valid in CSS class names replaced
+    * haveresponse - true if there is already a transcript
+    * response - the existing transcript
+    * formatplain - value of FORMAT_PLAIN
+    * waveheight - height of the waveform in pixels
+    * asrurl - speech recognition service URL
+    * region - speech recognition service region
+    * language - response language code, e.g. en-us
+    * maxtime - recording time limit in seconds, 0 for none
+    * wordcount - number of words in the existing transcript
+    * cancountwords - false for languages that do not separate words with spaces
+
+    Example context (json):
+    {
+        "id": "q1:1_answer_id",
+        "inputname": "q1:1_answer",
+        "safeid": "q1_1_answer_id",
+        "haveresponse": false,
+        "response": "",
+        "formatplain": 2,
+        "waveheight": 75,
+        "asrurl": "https://useast.ls.poodll.com/transcribe",
+        "region": "useast1",
+        "language": "en-us",
+        "maxtime": 60,
+        "wordcount": 0,
+        "cancountwords": true,
+        "contextid": 1,
+        "punctuate": true
+    }
+}}
+<div class="qtype_aitext_audiorecorder qtype_aitext_audiorecorder_{{safeid}} {{#haveresponse}}hidden{{/haveresponse}}">
+    <div id="audiorec_container_{{safeid}}" class="qtype_aitext_therec_waveButtonContainer audiorec_container_{{safeid}}" style="height: {{waveheight}}px; margin-bottom: 10px;">
+        <input type="hidden" id="{{id}}" name="{{inputname}}" class="{{safeid}}" value="{{response}}">
+        <input type="hidden" name="{{inputname}}format" value="{{formatplain}}">
+        <canvas id="{{safeid}}_waveform" class="qtype_aitext_therec_waveForm {{safeid}}_waveform" style="height: 100%; width: 100%;"></canvas>
+        <div id="{{safeid}}_recorderdiv" class="qtype_aitext_therec_waveButton {{safeid}}_recorderdiv" style="pointer-events: auto;"
+             data-waveheight="{{waveheight}}" data-region="{{region}}" data-lang="{{language}}"
+             data-asrurl="{{asrurl}}" data-maxtime="{{maxtime}}">
+            <i class="fa fa-microphone" aria-hidden="true"></i>
+        </div>
+    </div>
+    <div class="qtype_aitext_timer timerstatus_{{safeid}}">00:00:00</div>
+</div>
+<div class="qtype_aitext_audiosummary qtype_aitext_audiosummary_{{safeid}} {{^haveresponse}}hidden{{/haveresponse}}">
+    <div class="qtype_aitext_questionanswered">{{#str}} questionanswered, qtype_aitext {{/str}}</div>
+    <button type="button" class="qtype_aitext_retry retry_{{safeid}} btn btn-secondary">{{#str}} retry, qtype_aitext {{/str}}</button>
+</div>
+<div class="qtype_aitext_currentwordcount {{^cancountwords}}hidden{{/cancountwords}}">
+    {{#str}} currentwordcount, qtype_aitext {{/str}}: <span class="{{safeid}}_currentwordcount">{{wordcount}}</span>
+</div>
+{{#js}}
+require(['qtype_aitext/transcriptmanager'], function(transcriber) {
+    transcriber.clone().init({
+        uniqueid: '{{safeid}}',
+        lang: '{{language}}',
+        contextid: {{contextid}},
+        punctuate: {{#punctuate}}true{{/punctuate}}{{^punctuate}}false{{/punctuate}}
+    });
+});
+{{/js}}

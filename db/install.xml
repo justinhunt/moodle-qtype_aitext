@@ -22,6 +22,8 @@
         <FIELD NAME="sampleanswer" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="A sample answer for testing the prompt and AI response"/>
         <FIELD NAME="model" TYPE="char" LENGTH="60" NOTNULL="false" SEQUENCE="false" COMMENT="The model in the LLM, e.g. gpt-4 or llama3"/>
         <FIELD NAME="spellcheck" TYPE="int" LENGTH="1" NOTNULL="false" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="responselanguage" TYPE="char" LENGTH="16" NOTNULL="true" DEFAULT="en-us" SEQUENCE="false" COMMENT="Language of spoken responses, used to transcribe audio recordings."/>
+        <FIELD NAME="maxtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Time limit in seconds for audio recording responses, 0 for none."/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

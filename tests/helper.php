@@ -39,7 +39,7 @@ class qtype_aitext_test_helper extends question_test_helper {
      * @return array
      */
     public function get_test_questions() {
-        return ['editor', 'plain', 'monospaced', 'responsetemplate', 'noinline'];
+        return ['editor', 'plain', 'monospaced', 'responsetemplate', 'noinline', 'audio'];
     }
     /**
      * Make an aitext question for testing
@@ -91,6 +91,9 @@ class qtype_aitext_test_helper extends question_test_helper {
         $q->model = 'gpt4';
         $q->graderinfo = '';
         $q->graderinfoformat = FORMAT_HTML;
+        $q->spellcheck = false;
+        $q->responselanguage = 'en-us';
+        $q->maxtime = 0;
         $q->qtype = question_bank::get_qtype('aitext');
 
         return $q;
@@ -198,5 +201,33 @@ class qtype_aitext_test_helper extends question_test_helper {
         $q = $this->initialise_aitext_question();
         $q->responseformat = 'noinline';
         return $q;
+    }
+
+    /**
+     * Makes an aitext question using the audio recorder as input.
+     * @return qtype_aitext_question
+     */
+    public function make_aitext_question_audio() {
+        $q = $this->initialise_aitext_question();
+        $q->name = 'aitext question (audio recorder)';
+        $q->responseformat = 'audio';
+        $q->responselanguage = 'fr-fr';
+        $q->maxtime = 90;
+        return $q;
+    }
+
+    /**
+     * Make the data what would be received from the editing form for an aitext
+     * question using the audio recorder as input.
+     *
+     * @return stdClass the data that would be returned by $form->get_data();
+     */
+    public function get_aitext_question_form_data_audio() {
+        $fromform = $this->get_aitext_question_form_data_plain();
+        $fromform->name = 'aitext question (audio recorder)';
+        $fromform->responseformat = 'audio';
+        $fromform->responselanguage = 'fr-fr';
+        $fromform->maxtime = 90;
+        return $fromform;
     }
 }

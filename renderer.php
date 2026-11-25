@@ -29,6 +29,7 @@ require_once($CFG->dirroot . '/question/type/aitext/format_base_renderer.php');
 require_once($CFG->dirroot . '/question/type/aitext/format_editor_renderer.php');
 require_once($CFG->dirroot . '/question/type/aitext/format_plain_renderer.php');
 require_once($CFG->dirroot . '/question/type/aitext/format_monospaced_renderer.php');
+require_once($CFG->dirroot . '/question/type/aitext/format_audio_renderer.php');
 
 /**
  * Generates the output for aitext questions.

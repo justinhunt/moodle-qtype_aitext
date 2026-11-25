@@ -84,6 +84,15 @@ class restore_qtype_aitext_plugin extends restore_qtype_plugin {
         $pluginkey = "plugin_qtype_{$qtype}_question";
         $questiondata->options->sampleresponses = [];
 
+        // Backups made before the audio recorder response format existed lack its fields. Use the
+        // database defaults so the identity hash still matches the question already on the site.
+        if (!isset($questiondata->options->responselanguage)) {
+            $questiondata->options->responselanguage = \qtype_aitext\constants::DEFAULT_LANGUAGE;
+        }
+        if (!isset($questiondata->options->maxtime)) {
+            $questiondata->options->maxtime = 0;
+        }
+
         if (isset($backupdata[$pluginkey]) && isset($backupdata[$pluginkey]['sampleresponses'])) {
             $sampleresponses = $backupdata[$pluginkey]['sampleresponses']['sampleresponse'];
             $questiondata->options->sampleresponses = array_map(fn($sr) => (object) $sr, $sampleresponses);

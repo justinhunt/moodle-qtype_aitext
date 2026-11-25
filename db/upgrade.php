@@ -115,5 +115,24 @@ function xmldb_qtype_aitext_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026020601, 'qtype', 'aitext');
     }
 
+    if ($oldversion < 2026112500) {
+        // Define fields responselanguage and maxtime, used by the audio recorder response format.
+        $table = new xmldb_table('qtype_aitext');
+        $fields = [
+            new xmldb_field('responselanguage', XMLDB_TYPE_CHAR, '16', null, XMLDB_NOTNULL, null, 'en-us', 'spellcheck'),
+            new xmldb_field('maxtime', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'responselanguage'),
+        ];
+
+        // Conditionally launch add fields. Sites that ran the old aispeak fork already have them.
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        // Aitext savepoint reached.
+        upgrade_plugin_savepoint(true, 2026112500, 'qtype', 'aitext');
+    }
+
     return true;
 }

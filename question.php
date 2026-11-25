@@ -130,6 +130,12 @@ class qtype_aitext_question extends question_graded_automatically_with_countback
     /** @var bool $spellcheck if spellcheck is enabled */
     public bool $spellcheck;
 
+    /** @var string Language of spoken responses, e.g. en-us. Used by the audio response format. */
+    public $responselanguage;
+
+    /** @var int Time limit in seconds for audio recording responses, 0 for none. */
+    public $maxtime;
+
 
     /** @var array  */
     public $sampleanswers;
@@ -761,6 +767,8 @@ class qtype_aitext_question extends question_graded_automatically_with_countback
             'responsetemplateformat' => $this->responsetemplateformat,
             'minwordlimit' => $this->minwordlimit,
             'maxwordlimit' => $this->maxwordlimit,
+            'responselanguage' => $this->responselanguage,
+            'maxtime' => $this->maxtime,
         ];
 
         return $settings;
@@ -775,8 +783,8 @@ class qtype_aitext_question extends question_graded_automatically_with_countback
      .*/
     private function check_input_word_count($responsestring) {
 
-        if (!$this->minwordlimit && !$this->maxwordlimit) {
-            // This question does not care about the word count.
+        if ((!$this->minwordlimit && !$this->maxwordlimit) || $this->responseformat === 'audio') {
+            // This question does not care about the word count. Word limits are not offered for audio responses.
             return null;
         }
 

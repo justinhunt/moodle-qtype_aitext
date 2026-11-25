@@ -128,6 +128,139 @@ final class question_test extends \advanced_testcase {
         $this->assertEquals(FORMAT_HTML, $options->graderinfoformat);
     }
     /**
+     * The audio recorder options are saved, loaded and exported.
+     *
+     * @covers \qtype_aitext::save_question_options
+     * @covers \qtype_aitext::export_to_xml
+     */
+    public function test_audio_options_are_saved(): void {
+        global $DB, $CFG;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
+        $cat = $generator->create_question_category([]);
+        $created = $generator->create_question('aitext', 'audio', ['category' => $cat->id]);
+
+        $options = $DB->get_record('qtype_aitext', ['questionid' => $created->id], '*', MUST_EXIST);
+        $this->assertEquals('audio', $options->responseformat);
+        $this->assertEquals('fr-fr', $options->responselanguage);
+        $this->assertEquals(90, $options->maxtime);
+
+        $question = \question_bank::load_question($created->id);
+        $this->assertEquals('fr-fr', $question->responselanguage);
+        $this->assertEquals(90, $question->maxtime);
+
+        require_once($CFG->dirroot . '/question/format/xml/format.php');
+        $questiondata = \question_bank::load_question_data($created->id);
+        $exporter = new \qformat_xml();
+        $xml = $exporter->writequestion($questiondata);
+        $this->assertStringContainsString('<responselanguage>fr-fr</responselanguage>', $xml);
+        $this->assertStringContainsString('<maxtime>90</maxtime>', $xml);
+    }
+
+    /**
+     * An audio question saves when the hidden response template editor submits no text.
+     *
+     * @covers \qtype_aitext::save_question_options
+     */
+    public function test_audio_saves_without_response_template_text(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
+        $cat = $generator->create_question_category([]);
+        $question = $generator->create_question('aitext', 'audio', ['category' => $cat->id]);
+
+        $formdata = \test_question_maker::get_question_form_data('aitext', 'audio');
+        $formdata->id = $question->id;
+        $formdata->context = \context::instance_by_id($cat->contextid);
+        $formdata->responsetemplate = ['format' => FORMAT_HTML, 'itemid' => 0];
+        \question_bank::get_qtype('aitext')->save_question_options($formdata);
+
+        $options = $DB->get_record('qtype_aitext', ['questionid' => $question->id], '*', MUST_EXIST);
+        $this->assertSame('', $options->responsetemplate);
+        $this->assertEquals('fr-fr', $options->responselanguage);
+    }
+
+    /**
+     * Questions saved without the audio recorder options, e.g. imported from an older XML file, get the defaults.
+     *
+     * @covers \qtype_aitext::save_question_options
+     */
+    public function test_audio_options_default_when_missing(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
+        $cat = $generator->create_question_category([]);
+        $created = $generator->create_question('aitext', 'plain', ['category' => $cat->id]);
+
+        $options = $DB->get_record('qtype_aitext', ['questionid' => $created->id], '*', MUST_EXIST);
+        $this->assertEquals('en-us', $options->responselanguage);
+        $this->assertEquals(0, $options->maxtime);
+    }
+
+    /**
+     * The audio format renders the recorder with a hidden answer input, and the transcript read only.
+     *
+     * @covers \qtype_aitext_format_audio_renderer
+     */
+    public function test_render_audio_response(): void {
+        global $PAGE;
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        $context = \context_system::instance();
+        $PAGE->set_url('/');
+        $PAGE->set_context($context);
+
+        $question = \test_question_maker::make_question('aitext', 'audio');
+        $question->responsetemplate = 'Once upon a time';
+        $quba = \question_engine::make_questions_usage_by_activity('core_question_preview', $context);
+        $quba->set_preferred_behaviour('deferredfeedback');
+        $slot = $quba->add_question($question, 1);
+        $quba->start_all_questions();
+        $options = new \question_display_options();
+        $options->context = $context;
+
+        // Unanswered: the recorder is shown and the response template is not taken as an answer.
+        $html = $quba->render_question($slot, $options);
+        $inputname = $quba->get_question_attempt($slot)->get_qt_field_name('answer');
+        $this->assertStringContainsString('name="' . $inputname . '" class="', $html);
+        $this->assertStringContainsString('value=""', $html);
+        $this->assertStringContainsString('name="' . $inputname . 'format" value="' . FORMAT_PLAIN . '"', $html);
+        $this->assertStringContainsString('data-lang="fr-fr"', $html);
+        $this->assertStringContainsString('data-maxtime="90"', $html);
+        $this->assertMatchesRegularExpression('/qtype_aitext_audiosummary[^"]*\bhidden\b/', $html);
+
+        // Answered: the transcript is the response, shown read only.
+        $response = ['answer' => 'Je suis allé au marché', 'answerformat' => FORMAT_PLAIN];
+        $quba->process_action($slot, $response);
+        $this->assertEquals('Je suis allé au marché', $question->summarise_response($response));
+        $options->readonly = true;
+        $html = $quba->render_question($slot, $options);
+        $this->assertStringContainsString('Je suis allé au marché', $html);
+        $this->assertStringNotContainsString('data-lang=', $html);
+    }
+
+    /**
+     * Word limits are not offered for audio responses, so a leftover limit must not block the student.
+     *
+     * @covers ::is_complete_response
+     */
+    public function test_audio_ignores_word_limits(): void {
+        $question = \test_question_maker::make_question('aitext', 'audio');
+        $question->minwordlimit = 10;
+        $response = ['answer' => 'Bonjour', 'answerformat' => FORMAT_PLAIN];
+        $this->assertTrue($question->is_complete_response($response));
+
+        $question->responseformat = 'plain';
+        $this->assertFalse($question->is_complete_response($response));
+    }
+
+    /**
      * Make a trivial request to the LLM to check the code works
      * Only designed to test the 4.5 subsystem when run locally
      * not when in GHA ci

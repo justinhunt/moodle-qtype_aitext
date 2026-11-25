@@ -28,6 +28,8 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->libdir . '/questionlib.php');
 
+use qtype_aitext\constants;
+
 /**
  * The aitext question type.
  *
@@ -106,6 +108,12 @@ class qtype_aitext extends question_type {
         $this->set_default_value('responseformat', $fromform->responseformat);
         $this->set_default_value('responsefieldlines', $fromform->responsefieldlines);
         $this->set_default_value('markscheme', $fromform->markscheme);
+        if (isset($fromform->responselanguage)) {
+            $this->set_default_value('responselanguage', $fromform->responselanguage);
+        }
+        if (isset($fromform->maxtime)) {
+            $this->set_default_value('maxtime', $fromform->maxtime);
+        }
     }
     /**
      * Write the question data from the editing form to the database
@@ -149,8 +157,16 @@ class qtype_aitext extends question_type {
         );
 
         $options->graderinfoformat = $formdata->graderinfo['format'];
-        $options->responsetemplate = $formdata->responsetemplate['text'];
-        $options->responsetemplateformat = $formdata->responsetemplate['format'];
+        // The editing form hides the response template for the audio format, which does not use it,
+        // so the submitted data may not include its text.
+        $responsetemplate = (array) ($formdata->responsetemplate ?? []);
+        $options->responsetemplate = $responsetemplate['text'] ?? '';
+        $options->responsetemplateformat = $responsetemplate['format'] ?? FORMAT_HTML;
+
+        // Audio recorder response format options. Questions imported from older XML files do not have them.
+        $options->responselanguage = !empty($formdata->responselanguage) ? $formdata->responselanguage :
+            constants::DEFAULT_LANGUAGE;
+        $options->maxtime = (int) ($formdata->maxtime ?? 0);
 
         $DB->update_record('qtype_aitext', $options);
         foreach ($formdata->sampleresponses as $sr) {
@@ -228,6 +244,7 @@ class qtype_aitext extends question_type {
             'editor' => get_string('formateditor', 'qtype_aitext'),
             'plain' => get_string('formatplain', 'qtype_aitext'),
             'monospaced' => get_string('formatmonospaced', 'qtype_aitext'),
+            'audio' => get_string('formataudio', 'qtype_aitext'),
         ];
     }
 
@@ -309,6 +326,8 @@ class qtype_aitext extends question_type {
             'markscheme',
             'model',
             'spellcheck',
+            'responselanguage',
+            'maxtime',
         ];
     }
     /**

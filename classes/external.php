@@ -144,4 +144,58 @@ class qtype_aitext_external extends external_api {
             'marks' => new external_value(PARAM_FLOAT, 'AI grader awarded marks for student response', VALUE_DEFAULT),
         ]);
     }
+
+    /**
+     * Parameters for punctuate_transcript.
+     *
+     * @return external_function_parameters
+     */
+    public static function punctuate_transcript_parameters(): external_function_parameters {
+        return new external_function_parameters([
+            'transcript' => new external_value(PARAM_RAW, 'The speech recognition transcript'),
+            'language' => new external_value(PARAM_ALPHANUMEXT, 'The response language code, e.g. en-us'),
+            'contextid' => new external_value(PARAM_INT, 'The context the question is attempted in'),
+        ]);
+    }
+
+    /**
+     * Add punctuation to an audio response transcript without changing its words.
+     *
+     * @param string $transcript the speech recognition transcript
+     * @param string $language the response language code
+     * @param int $contextid the context the question is attempted in
+     * @return array the transcript, punctuated if that could be done without changing any words
+     */
+    public static function punctuate_transcript(string $transcript, string $language, int $contextid): array {
+        [
+            'transcript' => $transcript,
+            'language' => $language,
+            'contextid' => $contextid,
+        ] = self::validate_parameters(self::punctuate_transcript_parameters(), [
+            'transcript' => $transcript,
+            'language' => $language,
+            'contextid' => $contextid,
+        ]);
+        $context = context::instance_by_id($contextid);
+        self::validate_context($context);
+
+        // Students call this while attempting a question, so no capability is required beyond access to the context.
+        // The AI reply is only returned if it has the same words as the transcript, so this cannot be used as a
+        // general purpose AI.
+        if (!\qtype_aitext\local\punctuator::is_enabled()) {
+            return ['transcript' => $transcript];
+        }
+        return ['transcript' => \qtype_aitext\local\punctuator::punctuate($transcript, $language, $context->id)];
+    }
+
+    /**
+     * Return structure for punctuate_transcript.
+     *
+     * @return external_single_structure
+     */
+    public static function punctuate_transcript_returns(): external_single_structure {
+        return new external_single_structure([
+            'transcript' => new external_value(PARAM_RAW, 'The transcript, with punctuation if it could be added'),
+        ]);
+    }
 }

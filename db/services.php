@@ -39,4 +39,11 @@ $functions = [
                 'type'        => 'read',
                 'ajax'        => true,
         ],
+        'qtype_aitext_punctuate_transcript' => [
+                'classname'   => 'qtype_aitext_external',
+                'methodname'  => 'punctuate_transcript',
+                'description' => 'Adds punctuation to an audio response transcript without changing its words',
+                'type'        => 'read',
+                'ajax'        => true,
+        ],
 ];
