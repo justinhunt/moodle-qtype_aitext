@@ -21,6 +21,7 @@
  * @copyright  Justin Hunt - poodll.com
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
@@ -123,7 +124,12 @@ class qtype_aitext_external extends external_api {
         $aiquestion->questiontext = $questiontext;
         // Make sure we have the right data for AI to work with.
         if (!empty($response) && !empty($prompt) && $defaultmark > 0) {
-            $fullaiprompt = $aiquestion->build_full_ai_prompt($response, $prompt, $defaultmark, $marksscheme);
+            $fullaiprompt = $aiquestion->build_full_ai_prompt(
+                ['answer' => $response, 'answerformat' => FORMAT_HTML],
+                $prompt,
+                $defaultmark,
+                $marksscheme
+            );
             $feedback = $aiquestion->perform_request($fullaiprompt);
             $contentobject = $aiquestion->process_feedback($feedback);
         } else {

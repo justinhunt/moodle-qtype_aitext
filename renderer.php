@@ -25,6 +25,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+use qtype_aitext\response_formatter;
+
 require_once($CFG->dirroot . '/question/type/aitext/format_base_renderer.php');
 require_once($CFG->dirroot . '/question/type/aitext/format_editor_renderer.php');
 require_once($CFG->dirroot . '/question/type/aitext/format_plain_renderer.php');
@@ -69,7 +71,6 @@ class qtype_aitext_renderer extends qtype_renderer {
 
         if (empty($options->readonly)) {
             $answer = $responseoutput->response_area_input(
-                'answer',
                 $qa,
                 $step,
                 $question->responsefieldlines,
@@ -77,7 +78,6 @@ class qtype_aitext_renderer extends qtype_renderer {
             );
         } else {
             $answer = $responseoutput->response_area_read_only(
-                'answer',
                 $qa,
                 $step,
                 $question->responsefieldlines,
@@ -98,18 +98,9 @@ class qtype_aitext_renderer extends qtype_renderer {
             }
         }
 
-        $files = '';
-        if (isset($question->attachments) && $question->attachments) {
-            if (empty($options->readonly)) {
-                $files = $this->files_input($qa, $question->attachments, $options);
-            } else {
-                $files = $this->files_read_only($qa, $options);
-            }
-        }
-
         $result = '';
+        $uniqid = uniqid();
         if (get_config('qtype_aitext', 'backend') === 'local_ai_manager') {
-            $uniqid = uniqid();
             $result .= html_writer::tag(
                 'div',
                 '',
@@ -139,8 +130,12 @@ class qtype_aitext_renderer extends qtype_renderer {
                 ['class' => 'validationerror']
             );
         }
-        $result .= html_writer::tag('div', $files, ['class' => 'attachments']);
-        $result .= html_writer::end_tag('div');
+
+        // Add the spellcheck feedback, only in readonly mode and depending on the display options just like manualcomment .
+        if ($question->spellcheck && $options->readonly && $options->manualcomment != question_display_options::HIDDEN) {
+            $result .= $this->add_spellchecked_response_container($qa, $options->context, $uniqid);
+        }
+
         if (get_config('qtype_aitext', 'backend') === 'local_ai_manager') {
             $result .= html_writer::tag(
                 'div',
@@ -154,7 +149,51 @@ class qtype_aitext_renderer extends qtype_renderer {
             );
         }
 
+        $result .= html_writer::end_tag('div');
+
         return $result;
+    }
+
+    /**
+     * Extract plain text from the response for use in the spellcheck diff.
+     *
+     * Uses the same format-aware conversion that built the text sent to the AI
+     * (see \qtype_aitext\response_formatter::to_spellcheck_text()): prose is reduced to plain text
+     * (character-changing formatting neutralised) while any code is kept verbatim and fenced. This
+     * keeps both sides of the spellcheck diff consistent, since both are reduced identically.
+     *
+     * @param question_attempt $qa
+     * @return string
+     */
+    protected function get_plain_text_response(question_attempt $qa) {
+        $answerstep = $qa->get_last_step_with_qt_var('answer');
+        $answer = $answerstep->get_qt_var('answer');
+        $answerformat = $answerstep->get_qt_var('answerformat') ?? FORMAT_HTML;
+        return $answer ?
+            response_formatter::to_spellcheck_text($answer, $answerformat) : null;
+    }
+
+    /**
+     * Reduce the spellcheck text to plain text suitable for char-by-char diffs in JS.
+     *
+     * Both values are treated as plain text (FORMAT_PLAIN), i.e. returned verbatim (only trimmed):
+     *  - The teacher-edited value (spellcheckedit) is produced by an editor that is forced to
+     *    FORMAT_PLAIN (with PARAM_TEXT); note that its format is not persisted, only the text is.
+     *  - The AI-generated value (_spellcheckresponse) is the raw LLM output. The model is given the
+     *    student answer that has *already* been normalised by response_formatter::to_spellcheck_text()
+     *    (prose reduced to plain text, code kept verbatim and fenced) and is asked to reproduce it
+     *    1:1 with spelling fixed, so its output is that same plain text.
+     *
+     * @param question_attempt $qa the question attempt.
+     * @return string plain text spellcheck content.
+     */
+    protected function get_spellchecked_response(question_attempt $qa): string {
+        $teacheredit = $qa->get_last_behaviour_var('spellcheckedit');
+        if ($teacheredit !== null) {
+            return response_formatter::to_spellcheck_text($teacheredit, FORMAT_PLAIN);
+        }
+        $ai = $qa->get_last_behaviour_var('_spellcheckresponse') ?? '';
+        return response_formatter::to_spellcheck_text($ai, FORMAT_PLAIN);
     }
 
     /**
@@ -167,27 +206,29 @@ class qtype_aitext_renderer extends qtype_renderer {
      */
     public function feedback(question_attempt $qa, question_display_options $options) {
         // Get data written in the question.php grade_response method.
-        // This probably should be retrieved by an API call.
-        $comment = $qa->get_current_manual_comment();
+        $comment = $qa->get_last_behaviour_var('_comment');
 
         if ($this->page->pagetype === 'question-bank-previewquestion-preview') {
             // Ensure $comment is an array and has content.
-            if (is_array($comment) && !empty($comment[0])) {
+            if (!empty($comment)) {
                 $this->page->requires->js_call_amd('qtype_aitext/showprompt', 'init', []);
 
-                $prompt = $qa->get_last_qt_var('-aiprompt');
+                $prompt = $qa->get_last_behaviour_var('_aiprompt');
+
+                // Clean the prompt so no script/JS can be injected.
+                $prompt = format_text($prompt, FORMAT_PLAIN);
 
                 $showprompt  = '<br /><button id="showprompt" class="rounded">';
                 $showprompt .= get_string('showprompt', 'qtype_aitext') . '</button>';
                 $showprompt .= '<div id="fullprompt" class="hidden">' . $prompt . '</div>';
 
                 // Store the modified feedback in a variable.
-                $feedback = $comment[0] . $showprompt;
+                $feedback = $comment . $showprompt;
                 return $feedback;
             }
 
             // Return the comment if it exists, otherwise empty string.
-            return (is_array($comment) && isset($comment[0])) ? $comment[0] : '';
+            return $comment ?? '';
         }
 
         return '';
@@ -205,8 +246,10 @@ class qtype_aitext_renderer extends qtype_renderer {
             return '';
         }
 
+        $output = '';
+
         $question = $qa->get_question();
-        return html_writer::nonempty_tag(
+        $output .= html_writer::nonempty_tag(
             'div',
             $question->format_text(
                 $question->graderinfo,
@@ -218,117 +261,136 @@ class qtype_aitext_renderer extends qtype_renderer {
             ),
             ['class' => 'graderinfo']
         );
-    }
 
-    /**
-     * Displays any attached files when the question is in read-only mode.
-     * @param question_attempt $qa the question attempt to display.
-     * @param question_display_options $options controls what should and should
-     *      not be displayed. Used to get the context.
-     */
-    public function files_read_only(question_attempt $qa, question_display_options $options) {
-        global $CFG;
-        $files = $qa->get_last_qt_files('attachments', $options->context->id);
-        $filelist = [];
-
-        $step = $qa->get_last_step_with_qt_var('attachments');
-
-        foreach ($files as $file) {
-            $out = html_writer::link(
-                $qa->get_response_file_url($file),
-                $this->output->pix_icon(
-                    file_file_icon($file),
-                    get_mimetype_description($file),
-                    'moodle',
-                    ['class' => 'icon']
-                ) . ' ' . s($file->get_filename())
+        // Show AI-generated feedback as a reference for the grader.
+        $aicomment = $qa->get_last_behaviour_var('_comment');
+        if (!empty($aicomment)) {
+            $heading = get_string('aifeedbackforgrader', 'qtype_aitext');
+            $helpicon = $this->output->help_icon(
+                'aifeedbackforgrader',
+                'qtype_aitext'
             );
-            if (!empty($CFG->enableplagiarism)) {
-                require_once($CFG->libdir . '/plagiarismlib.php');
 
-                $out .= plagiarism_get_links((object)[
-                    'context' => $options->context->id,
-                    'component' => $qa->get_question()->qtype->plugin_name(),
-                    'area' => $qa->get_usage_id(),
-                    'itemid' => $qa->get_slot(),
-                    'userid' => $step->get_user_id(),
-                    'file' => $file]);
-            }
-            $filelist[] = html_writer::tag('li', $out, ['class' => 'mb-2']);
+            $output .= html_writer::start_tag(
+                'div',
+                ['class' => 'alert alert-info mt-2 mb-2']
+            );
+            $output .= html_writer::tag(
+                'div',
+                html_writer::tag('strong', $heading) . ' ' . $helpicon,
+                ['class' => 'mb-1']
+            );
+            $output .= format_text(
+                $aicomment,
+                FORMAT_HTML,
+                ['context' => $options->context]
+            );
+            $output .= html_writer::end_tag('div');
         }
 
-        $labelbyid = $qa->get_qt_field_name('attachments') . '_label';
-
-        $fileslabel = $options->add_question_identifier_to_label(get_string('answerfiles', 'qtype_aitext'));
-        $output = html_writer::tag('h4', $fileslabel, ['id' => $labelbyid, 'class' => 'sr-only']);
-        $output .= html_writer::tag('ul', implode($filelist), [
-            'aria-labelledby' => $labelbyid,
-            'class' => 'list-unstyled m-0',
-        ]);
         return $output;
     }
 
     /**
-     * Displays the input control for when the student should upload a single file.
-     * @param question_attempt $qa the question attempt to display.
-     * @param int $numallowed the maximum number of attachments allowed. -1 = unlimited.
-     * @param question_display_options $options controls what should and should
-     *      not be displayed. Used to get the context.
+     * Add a container showing the diffs between the user response and the spellchecked version.
+     * @param question_attempt $qa
+     * @param context $context
+     * @param string $uniqid
+     * @return string
+     * @throws coding_exception
      */
-    public function files_input(
+    protected function add_spellchecked_response_container(
         question_attempt $qa,
-        $numallowed,
-        question_display_options $options
+        context $context,
+        string $uniqid
     ) {
-        global $CFG, $COURSE;
-        require_once($CFG->dirroot . '/lib/form/filemanager.php');
-
-        $pickeroptions = new stdClass();
-        $pickeroptions->mainfile = null;
-        $pickeroptions->maxfiles = $numallowed;
-        $pickeroptions->itemid = $qa->prepare_response_files_draft_itemid(
-            'attachments',
-            $options->context->id
+        global $USER;
+        $htmlfragment = "";
+        $spellcheckareaid = 'aitext_spellcheck_area_' . $uniqid;
+        $spellcheckeditbuttonid = 'aitext_spellcheckedit_' . $uniqid;
+        $collapseid = 'aitext_spellcheck_collapse_' . $uniqid;
+        $spellcheckedresponse = $this->get_spellchecked_response($qa);
+        $response = $this->get_plain_text_response($qa);
+        // Lib to display the spellcheck diff.
+        $this->page->requires->js_call_amd('qtype_aitext/diff');
+        $this->page->requires->js_call_amd(
+            'qtype_aitext/spellcheck',
+            'init',
+            ['#' . $spellcheckareaid, '#' . $spellcheckeditbuttonid]
         );
-        $pickeroptions->context = $options->context;
-        $pickeroptions->return_types = FILE_INTERNAL | FILE_CONTROLLED_LINK;
 
-        $pickeroptions->itemid = $qa->prepare_response_files_draft_itemid(
-            'attachments',
-            $options->context->id
+        // Toggle link for the collapsible area.
+        $collapsedicon = html_writer::tag(
+            'span',
+            $this->output->pix_icon('t/collapsedchevron', get_string('expand')),
+            ['class' => 'collapsed-icon icon-no-margin'],
         );
-        $pickeroptions->accepted_types = $qa->get_question()->filetypeslist;
-
-        $fm = new form_filemanager($pickeroptions);
-        $fm->options->maxbytes = get_user_max_upload_file_size(
-            $this->page->context,
-            $CFG->maxbytes,
-            $COURSE->maxbytes,
-            $qa->get_question()->maxbytes
+        $expandedicon = html_writer::tag(
+            'span',
+            $this->output->pix_icon('t/expandedchevron', get_string('collapse')),
+            ['class' => 'expanded-icon icon-no-margin'],
         );
-        $filesrenderer = $this->page->get_renderer('core', 'files');
 
-        $text = '';
-        if (!empty($qa->get_question()->filetypeslist)) {
-            $text = html_writer::tag('p', get_string('acceptedfiletypes', 'qtype_aitext'));
-            $filetypesutil = new \core_form\filetypes_util();
-            $filetypes = $qa->get_question()->filetypeslist;
-            $filetypedescriptions = $filetypesutil->describe_file_types($filetypes);
-            $text .= $this->render_from_template('core_form/filetypes-descriptions', $filetypedescriptions);
+        $togglelink = html_writer::link(
+            '#' . $collapseid,
+            $expandedicon . $collapsedicon . get_string('spellchecktoggle', 'qtype_aitext'),
+            [
+                'data-bs-toggle' => 'collapse',
+                'aria-expanded' => 'true',
+                'aria-controls' => $collapseid,
+                'role' => 'button',
+                'class' => 'btn-outline-primary icons-collapse-expand my-3',
+            ]
+        );
+
+        $htmlfragment .= html_writer::tag(
+            'div',
+            $togglelink,
+            ['class' => 'd-flex align-items-center'],
+        );
+
+        // Collapsible content (default open).
+        $collapsiblecontent = '';
+
+        $divoptions = [];
+        $divoptions['id'] = $spellcheckareaid;
+        $divoptions['data-content'] = 'qtype_aitext_spellcheck';
+        $divoptions['data-spellcheck'] = $spellcheckedresponse;
+        $divoptions['data-questionattemptid'] = $qa->get_database_id() ?? '';
+        $divoptions['data-answer'] = $response;
+        $collapsiblecontent .= html_writer::tag(
+            'div',
+            s($response),
+            $divoptions,
+        );
+
+        if (
+            has_capability('mod/quiz:grade', $context) ||
+            has_capability('mod/quiz:regrade', $context) ||
+            ($context->contextlevel === CONTEXT_USER && intval($USER->id) === intval($context->instanceid))
+        ) {
+            $btnoptions = ['id' => $spellcheckeditbuttonid, 'class' => 'btn btn-link'];
+            $collapsiblecontent .= html_writer::tag(
+                'button',
+                $this->output->pix_icon(
+                    'i/edit',
+                    get_string('spellcheckedit', 'qtype_aitext'),
+                    'moodle'
+                ) . " " . get_string('spellcheckedit', 'qtype_aitext'),
+                $btnoptions
+            );
         }
 
-        $output = html_writer::start_tag('fieldset');
-        $fileslabel = $options->add_question_identifier_to_label(get_string('answerfiles', 'qtype_aitext'));
-        $output .= html_writer::tag('legend', $fileslabel, ['class' => 'sr-only']);
-        $output .= $filesrenderer->render($fm);
-        $output .= html_writer::empty_tag('input', [
-            'type' => 'hidden',
-            'name' => $qa->get_qt_field_name('attachments'),
-            'value' => $pickeroptions->itemid,
-        ]);
-        $output .= $text;
-        $output .= html_writer::end_tag('fieldset');
+        // Wrap content in the collapse div.
+        $htmlfragment .= html_writer::tag(
+            'div',
+            $collapsiblecontent,
+            [
+                'id' => $collapseid,
+                'class' => 'collapse show',
+            ]
+        );
 
-        return $output;
+        return $htmlfragment;
     }
 }

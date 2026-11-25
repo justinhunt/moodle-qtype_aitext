@@ -28,6 +28,7 @@ global $CFG;
 require_once($CFG->dirroot . '/question/engine/tests/helpers.php');
 require_once($CFG->dirroot . '/question/type/aitext/tests/helper.php');
 require_once($CFG->dirroot . '/question/type/aitext/questiontype.php');
+require_once($CFG->dirroot . '/question/type/aitext/question.php');
 require_once($CFG->dirroot . '/mod/quiz/locallib.php');
 
 use qtype_aitext_test_helper;
@@ -48,29 +49,23 @@ final class question_test extends \advanced_testcase {
     public $question;
 
     /**
-     * There is a live connection to the External AI system
-     * When run locally it will make a connection. Otherwise the
-     * tests will be skipped
-     * @var bool
-     */
-    protected bool $islive = false;
-
-    /**
-     * Config.php should include the apikey and orgid in the form
-     * define("TEST_LLM_APIKEY", "XXXXXXXXXXXX");
-     * define("TEST_LLM_ORGID", "XXXXXXXXXXXX");
-     * Summary of setUp
+     * Create the question type instance used by the tests.
      * @return void
      */
     protected function setUp(): void {
         parent::setUp();
         $this->question = new \qtype_aitext();
-        if (defined('TEST_LLM_APIKEY') && defined('TEST_LLM_ORGID')) {
-            set_config('apikey', TEST_LLM_APIKEY, 'aiprovider_openai');
-            set_config('orgid', TEST_LLM_ORGID, 'aiprovider_openai');
-            set_config('enabled', true, 'aiprovider_openai');
-            $this->islive = true;
+    }
+
+    /**
+     * Turn the live LLM flag off so it cannot leak into later tests.
+     * @return void
+     */
+    protected function tearDown(): void {
+        if (class_exists('qtype_aitext_question', false)) {
+            \qtype_aitext_question::$livetest = false;
         }
+        parent::tearDown();
     }
 
     /**
@@ -243,6 +238,11 @@ final class question_test extends \advanced_testcase {
         $html = $quba->render_question($slot, $options);
         $this->assertStringContainsString('Je suis allé au marché', $html);
         $this->assertStringNotContainsString('data-lang=', $html);
+
+        // The transcript is plain text, so any HTML in it is escaped.
+        $quba->process_action($slot, ['answer' => 'a <b>bold</b> answer', 'answerformat' => FORMAT_PLAIN]);
+        $html = $quba->render_question($slot, $options);
+        $this->assertStringContainsString('a &lt;b&gt;bold&lt;/b&gt; answer', $html);
     }
 
     /**
@@ -261,22 +261,47 @@ final class question_test extends \advanced_testcase {
     }
 
     /**
-     * Make a trivial request to the LLM to check the code works
-     * Only designed to test the 4.5 subsystem when run locally
-     * not when in GHA ci
+     * Make a trivial request to the LLM to check the code works.
+     * Skipped unless TEST_LLM_APIKEY is set in config.php or the environment.
      *
      * @covers \qtype_aitext\question::perform_request
      * @return void
      */
     public function test_perform_request(): void {
-        $this->resetAfterTest(true);
-        if (!$this->islive) {
-                $this->markTestSkipped('No live connection to the AI system');
-        }
+        qtype_aitext_test_helper::require_live_llm($this);
         $aitext = qtype_aitext_test_helper::make_aitext_question([]);
         $aitext->questiontext = 'What is 2 * 4?';
         $response = $aitext->perform_request('What is 2 * 4 only return a single number');
         $this->assertEquals('8', $response);
+    }
+
+    /**
+     * Grade a correct and an incorrect answer against the live LLM and check
+     * the JSON round trip produces usable marks and feedback.
+     * Skipped unless TEST_LLM_APIKEY is set in config.php or the environment.
+     *
+     * @covers \qtype_aitext_question::grade_response
+     * @covers \qtype_aitext_question::perform_request
+     * @covers \qtype_aitext_question::process_feedback
+     * @return void
+     */
+    public function test_perform_request_grade_round_trip(): void {
+        qtype_aitext_test_helper::require_live_llm($this);
+        $aitext = qtype_aitext_test_helper::make_aitext_question([
+            'questiontext' => 'What is the capital of France?',
+            'aiprompt' => 'Check whether the student names the capital of France.',
+            'markscheme' => 'Award 1 mark if the answer is Paris, otherwise 0.',
+        ]);
+
+        [$rightfraction, $rightstate] = $aitext->grade_response(['answer' => 'Paris']);
+        $this->assertNotEmpty($aitext->lastaicomment);
+        $this->assertNotEmpty($aitext->modelused);
+        $this->assertEquals(1.0, $rightfraction);
+        $this->assertEquals(\question_state::$gradedright, $rightstate);
+
+        [$wrongfraction, $wrongstate] = $aitext->grade_response(['answer' => 'Berlin']);
+        $this->assertEquals(0.0, $wrongfraction);
+        $this->assertEquals(\question_state::$gradedwrong, $wrongstate);
     }
 
 
@@ -312,7 +337,7 @@ final class question_test extends \advanced_testcase {
         // Setup common test data.
         $question = qtype_aitext_test_helper::make_aitext_question([]);
         $question->questiontext = 'Write a poem about nature';
-        $studentresponse = 'The rain in Spain falls mainly on the plain';
+        $studentresponse = ['answer' => 'The rain in Spain falls mainly on the plain', 'answerformat' => FORMAT_HTML];
         $markscheme = 'One mark for correct grammar';
         $defaultmark = 5;
 
@@ -387,7 +412,12 @@ final class question_test extends \advanced_testcase {
         set_config('prompttemplate', '{{markscheme}}', 'qtype_aitext');
         set_config('translatepostfix', false, 'qtype_aitext');
 
-        $result = $question->build_full_ai_prompt('Student answer', 'Grade this', 10, '');
+        $result = $question->build_full_ai_prompt(
+            ['answer' => 'Student answer', 'answerformat' => FORMAT_HTML],
+            'Grade this',
+            10,
+            ''
+        );
 
         // Should contain the fallback text for empty markscheme.
         $this->assertStringContainsString('null', $result);
@@ -450,6 +480,70 @@ final class question_test extends \advanced_testcase {
     }
 
     /**
+     * The disclaimer {{model}} (and legacy [[model]]) placeholder is replaced with the
+     * model the backend actually used, falling back to the configured model.
+     *
+     * @covers ::process_feedback()
+     * @dataProvider model_placeholder_provider
+     * @param string $disclaimer The configured disclaimer text containing a placeholder.
+     * @param string|null $modelused The model reported by the backend (null if none).
+     * @param string $expecteddisclaimer The disclaimer expected after substitution.
+     */
+    public function test_process_feedback_model_placeholder(
+        string $disclaimer,
+        ?string $modelused,
+        string $expecteddisclaimer
+    ): void {
+        $this->resetAfterTest();
+        set_config('disclaimer', $disclaimer, 'qtype_aitext');
+        set_config('translatepostfix', false, 'qtype_aitext');
+
+        $aitext = qtype_aitext_test_helper::make_aitext_question(['model' => 'llama3']);
+        // Simulate what perform_request() records after talking to the backend.
+        $aitext->modelused = $modelused;
+
+        $processedfeedback = $aitext->process_feedback('{"feedback": "Good job", "marks": 0}');
+
+        $expectedfeedback = format_text('Good job', FORMAT_MARKDOWN) . ' ' . $expecteddisclaimer;
+        $this->assertEquals($expectedfeedback, $processedfeedback->feedback);
+    }
+
+    /**
+     * Data provider for test_process_feedback_model_placeholder().
+     *
+     * @return array of test cases
+     */
+    public static function model_placeholder_provider(): array {
+        return [
+            'backend model used' => [
+                'disclaimer' => '(Response by {{model}})',
+                'modelused' => 'gpt-4o',
+                'expecteddisclaimer' => '(Response by gpt-4o)',
+            ],
+            'falls back to configured model when backend reports none' => [
+                'disclaimer' => '(Response by {{model}})',
+                'modelused' => null,
+                'expecteddisclaimer' => '(Response by llama3)',
+            ],
+            'falls back when backend reports empty string' => [
+                'disclaimer' => '(Response by {{model}})',
+                'modelused' => '',
+                'expecteddisclaimer' => '(Response by llama3)',
+            ],
+            'legacy double-bracket form still honoured' => [
+                'disclaimer' => '(Response by [[model]])',
+                'modelused' => 'gpt-4o',
+                'expecteddisclaimer' => '(Response by gpt-4o)',
+            ],
+            'disclaimer without placeholder is unchanged' => [
+                'disclaimer' => '(AI generated)',
+                'modelused' => 'gpt-4o',
+                'expecteddisclaimer' => '(AI generated)',
+            ],
+        ];
+    }
+
+    /**
      * Data provider for test_process_feedback().
      *
      * Provides various generated JSON strings by an external LLM.
@@ -475,7 +569,7 @@ final class question_test extends \advanced_testcase {
                 'expectedmarks' => 0,
             ],
             'valid_json_markdown_formatted' => [
-                // @codingStandardsIgnoreLine moodle.Strings.ForbiddenStrings.Found
+                // phpcs:ignore moodle.Strings.ForbiddenStrings.Found
                 'json' => '```json{"feedback": "Good job", "marks": 1}```',
                 'exceptionexpected' => false,
                 'expectedfeedback' => 'Good job',
@@ -523,7 +617,7 @@ final class question_test extends \advanced_testcase {
             // backslash when parsing the JSON. Then it will substitute each backslash with a double backslash, before sending it
             // through format_text which again will strip one backslash.
             // Overall, the following test cases should represent properly what happens.
-            // @codingStandardsIgnoreStart moodle.Strings.ForbiddenStrings.Found
+            // phpcs:disable moodle.Strings.ForbiddenStrings.Found,moodle.Files.LineLength.TooLong
             'json_with_backslashes' => [
                 // This JSON is real answer from an LLM with Markdown code block delimiters.
                 'json' => '```json { "feedback": "Die Antwort des Schülers zeigt ein grundlegendes Verständnis für das ' .
@@ -590,7 +684,7 @@ final class question_test extends \advanced_testcase {
                 'expectedmathjaxapplied' => true,
                 'expectedmarks' => 1,
             ],
-            // @codingStandardsIgnoreEnd
+            // phpcs:enable
         ];
     }
 
@@ -613,6 +707,30 @@ final class question_test extends \advanced_testcase {
         $this->assertEquals($questiontext, $aitext->summarise_response(
             ['answer' => $questiontext, 'answerformat' => FORMAT_HTML]
         ));
+    }
+
+    /**
+     * Test summarise_response() falls back to the question's response format when the
+     * response has no answerformat, e.g. responses submitted from older Moodle App versions.
+     *
+     * @covers ::summarise_response()
+     */
+    public function test_summarise_response_without_answerformat(): void {
+        $this->resetAfterTest();
+
+        $aitext = qtype_aitext_test_helper::make_aitext_question([]);
+        $aitext->start_attempt(new question_attempt_step(), 1);
+
+        // Editor formats fall back to HTML, so tags are removed.
+        $aitext->responseformat = 'editor';
+        $summary = $aitext->summarise_response(['answer' => '<p>First</p><p>Second</p>']);
+        $this->assertStringNotContainsString('<p>', $summary);
+        $this->assertStringContainsString('First', $summary);
+        $this->assertStringContainsString('Second', $summary);
+
+        // Plain formats fall back to plain text, so the text is kept as typed.
+        $aitext->responseformat = 'plain';
+        $this->assertEquals('x<y', $aitext->summarise_response(['answer' => 'x<y']));
     }
 
 
@@ -747,16 +865,15 @@ final class question_test extends \advanced_testcase {
         $this->resetAfterTest();
 
         // To verify that we really return the current quiz activity's context we avoid creating the question in the same context of
-        // course, but use a qbank in a different course.
-        $qbankcourse = $this->getDataGenerator()->create_course();
-        $qbank = $this->getDataGenerator()->create_module('qbank', ['course' => $qbankcourse->id]);
-        $cm = get_coursemodule_from_instance('qbank', $qbank->id, $qbankcourse->id, false, MUST_EXIST);
-        $qbankcontext = \context_module::instance($cm->id);
+        // course, but use another quiz's question bank in a different course.
+        $bankcourse = $this->getDataGenerator()->create_course();
+        $bankquiz = $this->getDataGenerator()->create_module('quiz', ['course' => $bankcourse->id]);
+        $bankcontext = \context_module::instance($bankquiz->cmid);
 
-        // Create question in the qbank context.
+        // Create question in the question bank quiz context.
         $questiongenerator = $this->getDataGenerator()->get_plugin_generator('core_question');
         $questioncategory = $questiongenerator->create_question_category([
-            'contextid' => $qbankcontext->id,
+            'contextid' => $bankcontext->id,
         ]);
         $questionrecord = $questiongenerator->create_question('aitext', 'editor', [
             'category' => $questioncategory->id,
@@ -789,7 +906,7 @@ final class question_test extends \advanced_testcase {
         $this->assertNotNull($firststep->get_id());
 
         $aitext = \question_bank::load_question($questionrecord->id);
-        $this->assertEquals($qbankcontext->id, (int) $aitext->contextid);
+        $this->assertEquals($bankcontext->id, (int) $aitext->contextid);
         $this->assertNotEquals($quizobj->get_context()->id, (int) $aitext->contextid);
 
         $aitext->apply_attempt_state($firststep);
@@ -799,17 +916,16 @@ final class question_test extends \advanced_testcase {
     }
 
     /**
-     * Verify that preview usage resolves to the qbank context where preview is executed.
+     * Verify that preview usage resolves to the module context where preview is executed.
      *
      * @covers ::get_contextid_for_ai_request
      */
-    public function test_get_contextid_for_ai_request_uses_qbank_context_in_preview(): void {
+    public function test_get_contextid_for_ai_request_uses_module_context_in_preview(): void {
         $this->resetAfterTest();
 
         $course = $this->getDataGenerator()->create_course();
-        $qbank = $this->getDataGenerator()->create_module('qbank', ['course' => $course->id]);
-        $cm = get_coursemodule_from_instance('qbank', $qbank->id, $course->id, false, MUST_EXIST);
-        $qbankcontext = \context_module::instance($cm->id);
+        $bankquiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $bankcontext = \context_module::instance($bankquiz->cmid);
 
         $questiongenerator = $this->getDataGenerator()->get_plugin_generator('core_question');
         $questioncategory = $questiongenerator->create_question_category([
@@ -820,7 +936,7 @@ final class question_test extends \advanced_testcase {
         ]);
         $aitext = \question_bank::load_question($questionrecord->id);
 
-        $previewquba = \question_engine::make_questions_usage_by_activity('core_question_preview', $qbankcontext);
+        $previewquba = \question_engine::make_questions_usage_by_activity('core_question_preview', $bankcontext);
         $previewquba->set_preferred_behaviour('deferredfeedback');
         $slot = $previewquba->add_question($aitext, 1);
         $previewquba->start_all_questions();
@@ -830,12 +946,12 @@ final class question_test extends \advanced_testcase {
         $firststep = $previewquba->get_question_attempt($slot)->get_step(0);
         $this->assertNotNull($firststep->get_id());
 
-        $this->assertNotEquals($qbankcontext->id, $aitext->contextid);
+        $this->assertNotEquals($bankcontext->id, $aitext->contextid);
 
         $aitext->apply_attempt_state($firststep);
         $resolvedcontextid = $aitext->get_contextid_for_ai_request();
 
-        $this->assertEquals($qbankcontext->id, $resolvedcontextid);
+        $this->assertEquals($bankcontext->id, $resolvedcontextid);
     }
 
     /**
@@ -849,15 +965,14 @@ final class question_test extends \advanced_testcase {
         $this->setAdminUser();
 
         $course = $this->getDataGenerator()->create_course();
-        $qbank = $this->getDataGenerator()->create_module('qbank', ['course' => $course->id]);
-        $cm = get_coursemodule_from_instance('qbank', $qbank->id, $course->id, false, MUST_EXIST);
-        $qbankcontext = \context_module::instance($cm->id);
+        $bankquiz = $this->getDataGenerator()->create_module('quiz', ['course' => $course->id]);
+        $bankcontext = \context_module::instance($bankquiz->cmid);
 
         $usercontext = \context_user::instance($USER->id);
 
         $questiongenerator = $this->getDataGenerator()->get_plugin_generator('core_question');
         $questioncategory = $questiongenerator->create_question_category([
-            'contextid' => $qbankcontext->id,
+            'contextid' => $bankcontext->id,
         ]);
         $questionrecord = $questiongenerator->create_question('aitext', 'editor', [
             'category' => $questioncategory->id,
@@ -880,8 +995,90 @@ final class question_test extends \advanced_testcase {
         $aitext->apply_attempt_state($firststep);
         $resolvedcontextid = $aitext->get_contextid_for_ai_request();
 
-        // Assert that the resolved context is not returning the user context, but the qbank context instead.
+        // Assert that the resolved context is not returning the user context, but the question bank context instead.
         $this->assertNotEquals($usercontext->id, $resolvedcontextid);
-        $this->assertEquals($qbankcontext->id, $resolvedcontextid);
+        $this->assertEquals($bankcontext->id, $resolvedcontextid);
+    }
+
+    /**
+     * Invoke the protected llm_translate() on a mock and return the prompt it sends to the LLM.
+     *
+     * The perform_request() call (which would hit an external LLM) is mocked so the test can
+     * capture the prompt string that llm_translate() builds, without any network access.
+     *
+     * @param string $text the text passed to llm_translate().
+     * @return string the prompt string handed to perform_request().
+     */
+    protected function capture_translate_prompt(string $text): string {
+        $captured = '';
+        $mock = $this->getMockBuilder(\qtype_aitext_question::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['perform_request'])
+            ->getMock();
+        $mock->method('perform_request')->willReturnCallback(
+            function (string $prompt, string $purpose = 'feedback') use (&$captured): string {
+                $captured = $prompt;
+                return '"TRANSLATED"';
+            }
+        );
+
+        $method = new \ReflectionMethod(\qtype_aitext_question::class, 'llm_translate');
+        $method->setAccessible(true);
+        $method->invoke($mock, $text);
+
+        return $captured;
+    }
+
+    /**
+     * Issue #72: the translation prompt must name the target language, not the ISO code.
+     *
+     * Reproduces the bug where current_language() ('et') was placed in the prompt verbatim
+     * ('... into et'), which LLMs do not reliably map to a language, causing the disclaimer to
+     * be returned in an arbitrary language (Dutch, Malay, ...). After the fix the prompt must
+     * contain the resolved language name from langconfig instead of the bare code.
+     *
+     * @covers ::llm_translate()
+     */
+    public function test_llm_translate_prompt_uses_language_name(): void {
+        global $SESSION;
+        $this->resetAfterTest();
+        set_config('translatepostfix', 1, 'qtype_aitext');
+        // Force a non-English language. Set forcelang directly rather than via
+        // force_current_language(), which silently ignores languages whose pack is not installed.
+        $SESSION->forcelang = 'et';
+
+        $prompt = $this->capture_translate_prompt('Response provided by an AI system');
+
+        // The resolved language name (e.g. "Eesti", or the langconfig fallback) must appear.
+        $languagename = get_string('thislanguage', 'langconfig');
+        $this->assertStringContainsString('into ' . $languagename, $prompt);
+
+        // The bare two-letter code must NOT be used as the translation target.
+        $this->assertStringNotContainsString('into et', $prompt);
+    }
+
+    /**
+     * Issue #72: the language and the trailing instruction must be separated.
+     *
+     * Reproduces the concatenation bug: current_language() . 'Only return...' produced
+     * '... into etOnly return the exact text', gluing the language token to the next word.
+     * After the fix a separator must sit between the language name and "Only return".
+     *
+     * @covers ::llm_translate()
+     */
+    public function test_llm_translate_prompt_separates_instruction(): void {
+        global $SESSION;
+        $this->resetAfterTest();
+        set_config('translatepostfix', 1, 'qtype_aitext');
+        // Force a non-English language. Set forcelang directly rather than via
+        // force_current_language(), which silently ignores languages whose pack is not installed.
+        $SESSION->forcelang = 'et';
+
+        $prompt = $this->capture_translate_prompt('Response provided by an AI system');
+
+        $languagename = get_string('thislanguage', 'langconfig');
+        // The instruction must be delimited, not glued to the language name ("EestiOnly").
+        $this->assertStringNotContainsString($languagename . 'Only', $prompt);
+        $this->assertStringContainsString('. Only return the exact text', $prompt);
     }
 }

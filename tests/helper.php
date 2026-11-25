@@ -57,16 +57,6 @@ class qtype_aitext_test_helper extends question_test_helper {
         $question->aiprompt = $options['aiprompt'] ?? '';
         $question->contextid = 1;
         $question->spellcheck = 0;
-        $question->step = new class {
-            /**
-             * Placeholder to avoid error.
-             *
-             * @return int
-             */
-            public function get_id() {
-                return 1;
-            }
-        };
 
         test_question_maker::initialise_a_question($question);
         $question->qtype = question_bank::get_qtype('aitext');
@@ -85,6 +75,7 @@ class qtype_aitext_test_helper extends question_test_helper {
         $q->generalfeedback = 'I hope your story had a beginning, a middle and an end.';
         $q->responseformat = 'editor';
         $q->responsefieldlines = 10;
+        $q->spellcheck = 0;
         $q->minwordlimit = null;
         $q->maxwordlimit = null;
         $q->sampleanswers = [];
@@ -229,5 +220,38 @@ class qtype_aitext_test_helper extends question_test_helper {
         $fromform->responselanguage = 'fr-fr';
         $fromform->maxtime = 90;
         return $fromform;
+    }
+
+    /**
+     * Configure a core AI OpenAI provider for a live test, or skip the test.
+     *
+     * Credentials come from TEST_LLM_APIKEY and TEST_LLM_ORGID, defined in
+     * config.php or set as environment variables. The org id is optional.
+     * The calling test must reset qtype_aitext_question::$livetest in tearDown().
+     *
+     * @param \advanced_testcase $testcase the calling test
+     * @return void
+     */
+    public static function require_live_llm(\advanced_testcase $testcase): void {
+        $apikey = defined('TEST_LLM_APIKEY') ? TEST_LLM_APIKEY : getenv('TEST_LLM_APIKEY');
+        $orgid = defined('TEST_LLM_ORGID') ? TEST_LLM_ORGID : getenv('TEST_LLM_ORGID');
+        if (empty($apikey) || str_starts_with($apikey, 'XXXX')) {
+            $testcase->markTestSkipped('Set TEST_LLM_APIKEY in config.php or the environment to run live LLM tests');
+        }
+        $testcase->resetAfterTest();
+        $config = ['apikey' => $apikey];
+        if (!empty($orgid) && !str_starts_with($orgid, 'XXXX')) {
+            $config['orgid'] = $orgid;
+        }
+        set_config('backend', 'core_ai_subsystem', 'qtype_aitext');
+        $manager = \core\di::get(\core_ai\manager::class);
+        $manager->create_provider_instance(
+            classname: '\aiprovider_openai\provider',
+            name: 'qtype_aitext live test',
+            enabled: true,
+            config: $config,
+        );
+        question_bank::load_question_definition_classes('aitext');
+        qtype_aitext_question::$livetest = true;
     }
 }

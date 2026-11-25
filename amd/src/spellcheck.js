@@ -51,35 +51,36 @@ export const init = (readonlyareaselector, spellcheckeditbuttonselector) => {
  * @param {string} readonlyareaselector the selector for the readonly area to apply the spell check diff to
  */
 export const renderDiff = (readonlyareaselector) => {
-    const studentanswer = document.querySelector(readonlyareaselector).innerHTML;
-    const spellcheck = document.querySelector(readonlyareaselector).dataset.spellcheck;
-    let span = null;
+    const area = document.querySelector(readonlyareaselector);
+    // Read both operands as decoded plain text (not innerHTML) so the char-by-char
+    // diff compares like with like, and so no untrusted markup reaches the DOM as HTML.
+    const studentanswer = area.dataset.answer ?? area.textContent;
+    const spellcheck = area.dataset.spellcheck;
+    if (!spellcheck) {
+        return;
+    }
 
     const diff = Diff.diffChars(studentanswer, spellcheck);
     const fragment = document.createElement('div');
 
-    let fullspellcheck = '';
-
     diff.forEach(part => {
-        // We need to replace the whitespaces, because otherwise they will be removed by
-        // calling parseFromString of the DOMParser.
-        part.value = part.value.replace(/ /g, '&nbsp;');
-        const parser = new DOMParser();
-        part.value = parser.parseFromString(part.value, 'text/html');
-        const cls = part.added ? 'qtype_aitext_spellcheck_new' :
-            part.removed ? 'qtype_aitext_spellcheck_wrong' : '';
-        if (part.added || part.removed) {
-            span = document.createElement('span');
-            span.classList = cls;
-            span.appendChild(part.value.documentElement);
-            fullspellcheck += span.outerHTML;
+        let cls = '';
+        if (part.added) {
+            cls = 'qtype_aitext_spellcheck_new';
+        } else if (part.removed) {
+            cls = 'qtype_aitext_spellcheck_wrong';
+        }
+        if (cls) {
+            const span = document.createElement('span');
+            span.className = cls;
+            span.textContent = part.value;
+            fragment.appendChild(span);
         } else {
-            fullspellcheck += part.value.documentElement.textContent;
+            fragment.appendChild(document.createTextNode(part.value));
         }
     });
-    fullspellcheck = fullspellcheck.replace(/\u00A0/g, " ");
-    fragment.innerHTML = fullspellcheck;
-    document.querySelector(readonlyareaselector).replaceChildren(fragment);
+
+    area.replaceChildren(fragment);
 };
 
 /**
@@ -88,14 +89,12 @@ export const renderDiff = (readonlyareaselector) => {
  * @param {string} readonlyareaselector the selector for the readonly area
  */
 export const showModalForm = async(readonlyareaselector) => {
-    const attemptstepid = document.querySelector(readonlyareaselector).dataset.spellcheckattemptstepid;
-    const answerstepid = document.querySelector(readonlyareaselector).dataset.spellcheckattemptstepanswerid;
+    const questionattemptid = document.querySelector(readonlyareaselector).dataset.questionattemptid;
     const title = await getString('spellcheckedit', 'qtype_aitext');
     const modalForm = new ModalForm({
         formClass: "qtype_aitext\\form\\edit_spellcheck",
         args: {
-            attemptstepid,
-            answerstepid
+            questionattemptid,
         },
         modalConfig: {title},
     });

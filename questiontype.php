@@ -98,7 +98,7 @@ class qtype_aitext extends question_type {
     }
 
     /**
-     * Markscheme may not be required here
+     * Save default values for next time.
      *
      * @param stdClass $fromform
      * @return void
@@ -107,7 +107,6 @@ class qtype_aitext extends question_type {
         parent::save_defaults_for_new_questions($fromform);
         $this->set_default_value('responseformat', $fromform->responseformat);
         $this->set_default_value('responsefieldlines', $fromform->responsefieldlines);
-        $this->set_default_value('markscheme', $fromform->markscheme);
         if (isset($fromform->responselanguage)) {
             $this->set_default_value('responselanguage', $fromform->responselanguage);
         }
@@ -169,10 +168,15 @@ class qtype_aitext extends question_type {
         $options->maxtime = (int) ($formdata->maxtime ?? 0);
 
         $DB->update_record('qtype_aitext', $options);
-        foreach ($formdata->sampleresponses as $sr) {
-            $sampleresponse['question'] = $formdata->id;
-            $sampleresponse['response'] = $sr;
-            $DB->insert_record('qtype_aitext_sampleresponses', $sampleresponse);
+        $DB->delete_records('qtype_aitext_sampleresponses', ['question' => $formdata->id]);
+        foreach ($formdata->sampleresponses ?? [] as $sr) {
+            if (trim((string) $sr) === '') {
+                continue;
+            }
+            $DB->insert_record('qtype_aitext_sampleresponses', [
+                'question' => $formdata->id,
+                'response' => $sr,
+            ]);
         }
     }
     /**
@@ -215,7 +219,7 @@ class qtype_aitext extends question_type {
      */
     public function get_sampleresponses($question) {
         global $DB;
-        $sampleresponses = $DB->get_records('qtype_aitext_sampleresponses', ['question' => $question->id]);
+        $sampleresponses = $DB->get_records('qtype_aitext_sampleresponses', ['question' => $question->id], 'id ASC');
         return $sampleresponses;
     }
 
@@ -228,7 +232,7 @@ class qtype_aitext extends question_type {
      */
     public function delete_question($questionid, $contextid) {
         global $DB;
-
+        $DB->delete_records('qtype_aitext_sampleresponses', ['question' => $questionid]);
         $DB->delete_records('qtype_aitext', ['questionid' => $questionid]);
         parent::delete_question($questionid, $contextid);
     }
@@ -394,7 +398,6 @@ class qtype_aitext extends question_type {
     public function export_to_xml($question, qformat_xml $format, $extra = null) {
         $fs = get_file_storage();
         $textfields = $this->get_text_fields();
-        ;
         $formatfield = '/^(' . implode('|', $textfields) . ')format$/';
         $fields = $this->extra_question_fields();
         array_shift($fields); // Remove table name.
@@ -420,10 +423,11 @@ class qtype_aitext extends question_type {
         }
         foreach ($question->options->sampleresponses as $sampleresponse) {
             $output .= "     <sampleresponse>\n";
-            $output .= '      <question>' . $sampleresponse->question . "</question>\n";
-            $output .= '      <response>' . $sampleresponse->response . "</response>\n";
+            $output .= '      <question>' . $format->xml_escape($sampleresponse->question) . "</question>\n";
+            $output .= '      <response>' . $format->xml_escape($sampleresponse->response) . "</response>\n";
             $output .= "     </sampleresponse>\n";
         }
+        $output .= '    <!-- AI Text version:' . get_config('qtype_aitext', 'version') . " -->\n";
         return $output;
     }
     /**
@@ -456,20 +460,28 @@ class qtype_aitext extends question_type {
         }
         return '';
     }
+
     /**
      * The name this question should appear as in the create new question
      * dropdown.
      *
-     * When using local_ai_manager the availability ai
-     * is controlled by the tenant setting.
+     * When using local_ai_manager, availability depends on whether the
+     * current tenant is allowed to use the AI manager.
      *
-     * @return mixed
+     * @return string
      */
     public function menu_name() {
-        if (get_config('qtype_aitext', 'backend') === 'local_ai_manager' && class_exists('\local_ai_manager\local\tenant')) {
-            $tenant = \core\di::get(\local_ai_manager\local\tenant::class);
-            if (!$tenant->is_tenant_allowed()) {
-                return '';
+        if (get_config('qtype_aitext', 'backend') === 'local_ai_manager') {
+            if (method_exists('\local_ai_manager\ai_manager_utils', 'is_tenant_allowed')) {
+                if (!\local_ai_manager\ai_manager_utils::is_tenant_allowed()) {
+                    return '';
+                }
+            } else if (class_exists('\local_ai_manager\local\tenant')) {
+                // Fallback for older versions of local_ai_manager which do not provide ai_manager_utils::is_tenant_allowed().
+                $tenant = \core\di::get(\local_ai_manager\local\tenant::class);
+                if (!$tenant->is_tenant_allowed()) {
+                    return '';
+                }
             }
         }
         return parent::menu_name();

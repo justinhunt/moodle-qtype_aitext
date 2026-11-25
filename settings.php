@@ -21,6 +21,7 @@
  * @copyright  2024 Marcus Green
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
 defined('MOODLE_INTERNAL') || die;
 
 if ($ADMIN->fulltree) {
@@ -41,7 +42,7 @@ if ($ADMIN->fulltree) {
         'qtype_aitext/disclaimer',
         new lang_string('disclaimer', 'qtype_aitext'),
         new lang_string('disclaimer_setting', 'qtype_aitext'),
-        '(Response provided by an AI System)'
+        '(Response provided by an AI System: {{model}})'
     ));
     $settings->add(new admin_setting_configcheckbox(
         'qtype_aitext/enable_expertmode',
@@ -54,9 +55,9 @@ if ($ADMIN->fulltree) {
         'qtype_aitext/jsonprompt',
         new lang_string('jsonprompt', 'qtype_aitext'),
         new lang_string('jsonprompt_setting', 'qtype_aitext'),
-        'Return only a JSON object which enumerates a set of 2 elements.The JSON object should be in
-	this format: {feedback":"string","marks":"number"} where marks is a single number summing all marks.
-   	Also show the marks as part of the feedback.',
+        'Return only a JSON object with exactly 2 elements, in this format: {"feedback":"string","marks":number} ' .
+            'where marks is a single number summing all marks. Put double quotes around every key and every string. ' .
+            'Also show the marks as part of the feedback.',
         PARAM_RAW,
         80,
         6

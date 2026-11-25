@@ -82,6 +82,9 @@ class provider implements
                 case 'noinline':
                     $stringvalue = get_string('formatnoinline', 'qtype_aitext');
                     break;
+                case 'audio':
+                    $stringvalue = get_string('formataudio', 'qtype_aitext');
+                    break;
                 default:
                     $stringvalue = get_string('formateditor', 'qtype_aitext');
                     break;

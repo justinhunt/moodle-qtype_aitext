@@ -1,5 +1,91 @@
 ### Moodle AIText question type
 
+## Unreleased
+
+New "Audio recorder" response format: students answer by speaking. The recording is transcribed in the browser (falling back to the Poodll transcription service) and the transcript is graded as a normal text response. Each question sets the response language and a maximum recording time. Browser transcripts have no punctuation, so the configured AI backend adds it (setting "Punctuate audio transcripts"); the punctuated text is only used if its words are exactly the same as the transcript's. Thanks to Justin Hunt (Poodll).
+
+## Release 2.1.2 Oct 2026
+
+Answers submitted from the Moodle App now include their format, so line breaks are kept when the answer is displayed. Previously the format was dropped, which also caused an "Undefined array key answerformat" warning.
+https://github.com/marcusgreen/moodle-qtype_aitext/pull/98
+
+Fixed "Call to undefined method response_generate_text::get_model_used()" when grading with the Moodle core AI subsystem on Moodle 4.5. The method only exists from Moodle 5.0, so on 4.5 the [[model]] disclaimer placeholder falls back to the configured model.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/96
+
+CI now also tests against Moodle 4.5 (MOODLE_405_STABLE, PHP 8.1, PostgreSQL), with tests fixed to pass there. Thanks to daniel221722 for reporting the 4.5 issue behind both of these changes.
+https://github.com/marcusgreen/moodle-qtype_aitext/pull/97
+
+The student's answer shown in the "Edit spellcheck" dialog is now escaped, so markup in an answer can no longer run in the grader's browser. Thanks to Peter Mayer and the ByCS team.
+https://github.com/marcusgreen/moodle-qtype_aitext/pull/94
+
+Fixed the default JSON prompt, which had a missing quote that caused AI responses to fail to decode, leaving questions in "Requires grading". Thanks to Adam Jenkins.
+https://github.com/marcusgreen/moodle-qtype_aitext/pull/93
+
+The AI disclaimer is now translated into the user's current language.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/72
+
+Moodle XML exports now record the AIText plugin version. Thanks to Norbert Forster for the suggestion.
+
+The Response Tester is now expanded and Response options collapsed by default on the editing form.
+
+Added examples/imageinterpretation.xml with eight image interpretation questions.
+
+The live AI request test now calls a real provider when an API key is configured, and is skipped otherwise.
+
+## Release 2.1.1 Oct 2026
+
+Now supports Moodle 5.3 (tested against MOODLE_503_STABLE).
+
+Fixed the default marking scheme value preventing a new question from being saved.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/88
+
+The grade fraction returned by the AI is now clamped between 0 and 1, so an out-of-range score can no longer produce invalid grades.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/90
+
+Importing aitext questions from XML without sample responses no longer produces PHP warnings. Thanks to Pekka-Ilmari for reporting.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/85
+
+The dependency on the companion behaviours (qbehaviour_immediate_for_aitext and qbehaviour_deferred_for_aitext) is no longer pinned to an exact version, so the behaviours can be updated independently.
+
+Restore tests no longer depend on mod_qbank.
+https://github.com/marcusgreen/moodle-qtype_aitext/issues/69
+
+Thanks to Richard Aljaste for the fixes for #88 and #90, and to Paola Maneggia and the ByCS team for CI improvements.
+
+## Release 2.1.0 Aug 2026
+
+This is a significant release. Grading now runs through dedicated companion question behaviours (`qbehaviour_immediate_for_aitext` and `qbehaviour_deferred_for_aitext`) instead of overriding core behaviours. This makes AIText grading more predictable and keeps it isolated from other question types. Existing quiz attempts that used the legacy `interactivecountback` behaviour are automatically migrated on upgrade; other question types' attempts are left untouched.
+
+AI-generated feedback can now be shown to, and used as a reference by, a human grader when marking a response manually.
+
+The spellchecking feature has been reworked and moved into its own separate area of the form. Spellchecking no longer fails to initialise when the response string is empty.
+
+Grading no longer fails outright when the configured AI tools are unavailable — the attempt degrades gracefully instead of erroring.
+
+Fixed sample responses accumulating duplicates each time a question was saved.
+
+Fixed an incorrect bitmask check in `responserun.js` that affected eval-div matching.
+
+Added test fixtures (small English, Maths, Biology and ICT quizzes).
+
+Thanks to Paola Maneggia and the ByCS team for the behaviour rework improvements, extensive testing and positive feedback.
+
+The disclaimer setting can now include a `{{model}}` placeholder, replaced with the AI model that generated the feedback across all supported backends.
+
+Thanks to Richard Aljaste for a fix to an issue with translating the disclaimer language https://github.com/marcusgreen/moodle-qtype_aitext/pull/73
+
+Thanks to Jonathan Champ for testing.
+
+Thanks to Marina Glancy for MDLShield which scans moodle plugins for security issues.
+
+## Release 2.03 Jul 2026
+
+Sample responses are now XML-escaped on export. Any &, < or > in the sample response text previously produced invalid XML that failed to re-import.
+
+Sample responses are deleted when the question they belong to is deleted, rather than being left orphaned in the database.
+
+The AI prompt shown by the "Show prompt" button when previewing a question is now sanitized before output. The renderer previously inserted the raw prompt straight into the page HTML, so script tags, event handlers or javascript: URLs held in the prompt would execute in the previewer's browser. It is now passed through format_text() with cleaning enabled, which strips those while leaving safe markup intact. Thanks to Paola Maneggia for feedback on this release and much other work.
+
 ## Release 2.02 Apr 2026
 
 Huge thanks to Philipp Memmel and the team at ByCS who have contributed a transformative amount of code and testing to the plugin.

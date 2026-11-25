@@ -49,20 +49,41 @@ class qtype_aitext_format_audio_renderer extends qtype_aitext_format_renderer_ba
     }
 
     /**
+     * The transcript of the recording, read-only.
+     *
+     * @param question_attempt $qa the question attempt being displayed.
+     * @param question_attempt_step $step the current step.
+     * @param int $lines not used by this format.
+     * @param object $context the context the attempt belongs to.
+     * @return string HTML fragment.
+     */
+    public function response_area_read_only($qa, $step, $lines, $context) {
+        $id = $qa->get_qt_field_name('answer') . '_id';
+
+        $responselabel = $this->displayoptions->add_question_identifier_to_label(get_string('answeraudio', 'qtype_aitext'));
+        $output = html_writer::tag('label', $responselabel, ['class' => 'visually-hidden', 'for' => $id]);
+        $output .= html_writer::div(
+            format_text((string) $step->get_qt_var('answer'), FORMAT_PLAIN, ['para' => false]),
+            $this->class_name() . ' qtype_aitext_response readonly',
+            ['id' => $id]
+        );
+        return $output;
+    }
+
+    /**
      * The audio recorder, with a hidden input that receives the transcript.
      *
-     * @param string $name
-     * @param question_attempt $qa
-     * @param question_attempt_step $step
-     * @param int $lines not used by this format
-     * @param object $context
-     * @return string
+     * @param question_attempt $qa the question attempt being displayed.
+     * @param question_attempt_step $step the current step.
+     * @param int $lines not used by this format.
+     * @param object $context the context the attempt belongs to.
+     * @return string HTML fragment.
      */
-    public function response_area_input($name, $qa, $step, $lines, $context) {
+    public function response_area_input($qa, $step, $lines, $context) {
         $question = $qa->get_question();
-        $inputname = $qa->get_qt_field_name($name);
+        $inputname = $qa->get_qt_field_name('answer');
         $id = $inputname . '_id';
-        $response = (string) $step->get_qt_var($name);
+        $response = (string) $step->get_qt_var('answer');
         if ($response === (string) $question->responsetemplate) {
             // The renderer pre-fills unanswered questions with the response template, which means nothing to a recorder.
             $response = '';
@@ -70,7 +91,7 @@ class qtype_aitext_format_audio_renderer extends qtype_aitext_format_renderer_ba
         $language = $question->responselanguage ?: \qtype_aitext\constants::DEFAULT_LANGUAGE;
 
         $responselabel = $this->displayoptions->add_question_identifier_to_label(get_string('answeraudio', 'qtype_aitext'));
-        $output = html_writer::tag('label', $responselabel, ['class' => 'sr-only', 'for' => $id]);
+        $output = html_writer::tag('label', $responselabel, ['class' => 'visually-hidden', 'for' => $id]);
         $output .= html_writer::start_tag('div', ['class' => $this->class_name() . ' qtype_aitext_response']);
         $output .= $this->render_from_template('qtype_aitext/audiorecorder', [
             'id' => $id,
@@ -92,26 +113,5 @@ class qtype_aitext_format_audio_renderer extends qtype_aitext_format_renderer_ba
         $output .= html_writer::end_tag('div');
 
         return $output;
-    }
-
-    /**
-     * Prepare the response for read-only display.
-     *
-     * @param string $name the variable name this input edits.
-     * @param question_attempt $qa the question being displayed.
-     * @param question_attempt_step $step the current step.
-     * @param object $context the context the attempt belongs to.
-     * @return string the response prepared for display.
-     */
-    protected function prepare_response(
-        $name,
-        question_attempt $qa,
-        question_attempt_step $step,
-        $context
-    ) {
-        if (!$step->has_qt_var($name)) {
-            return '';
-        }
-        return format_text($step->get_qt_var($name), $step->get_qt_var($name . 'format') ?? FORMAT_PLAIN, ['para' => false]);
     }
 }
