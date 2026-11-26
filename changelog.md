@@ -1,6 +1,6 @@
 ### Moodle AIText question type
 
-## Unreleased
+## Release 2.1.3 Nov 2026
 
 New "Audio recorder" response format: students answer by speaking. The recording is transcribed in the browser (falling back to the Poodll transcription service) and the transcript is graded as a normal text response. Each question sets the response language and a maximum recording time. Browser transcripts have no punctuation, so the configured AI backend adds it (setting "Punctuate audio transcripts"); the punctuated text is only used if its words are exactly the same as the transcript's. Thanks to Justin Hunt (Poodll).
 
