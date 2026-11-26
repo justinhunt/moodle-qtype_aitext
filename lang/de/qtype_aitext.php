@@ -27,6 +27,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $string['acceptedfiletypes'] = 'Akzeptierte Dateitypen';
 
+$string['addingpunctuation'] = 'Satzzeichen werden ergänzt...';
 $string['aiprompt'] = 'AI-Eingabeaufforderung';
 $string['aiprompt_help'] = 'Eine Eingabeaufforderung für den AI Grader. Dies ist der Leitfaden, den AI verwendet, um eine Rückmeldung über die Schülerantwort zu geben.
 

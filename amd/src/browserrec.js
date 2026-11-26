@@ -151,9 +151,10 @@ define(['jquery', 'core/log'], function($, log) {
             recognition.onresult = function(event) {
                 for (var i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
-                        that.final_transcript += event.results[i][0].transcript;
+                        that.final_transcript = that.join_segment(that.final_transcript, event.results[i][0].transcript);
                     } else {
-                        var provisional_transcript = that.final_transcript + event.results[i][0].transcript;
+                        var provisional_transcript = that.join_segment(that.final_transcript,
+                            event.results[i][0].transcript);
                         // The interim and final events do not arrive in sequence, we dont want the length going down, its weird
                         // so just dont respond when the sequence is wonky
                         if (provisional_transcript.length < that.interim_transcript.length) {
@@ -167,6 +168,26 @@ define(['jquery', 'core/log'], function($, log) {
 
             };
         }, // End of register events
+
+        /**
+         * Append a recognised segment to the transcript. Chrome starts each new segment with a space but
+         * Edge does not, which would run its sentences together, so add a space where one is missing.
+         * Chinese and Japanese are written without spaces, so none is added between their characters.
+         *
+         * @param {String} transcript the transcript so far
+         * @param {String} segment the newly recognised segment
+         * @returns {String}
+         */
+        join_segment: function(transcript, segment) {
+            if (transcript === '' || segment === '' || /\s$/.test(transcript) || /^\s/.test(segment)) {
+                return transcript + segment;
+            }
+            var nospaces = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+            if (nospaces.test(transcript.slice(-1)) || nospaces.test(segment.charAt(0))) {
+                return transcript + segment;
+            }
+            return transcript + ' ' + segment;
+        },
 
         drawWave: function() {
 

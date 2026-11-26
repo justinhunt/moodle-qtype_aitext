@@ -67,6 +67,18 @@ final class punctuator_test extends \advanced_testcase {
     }
 
     /**
+     * Transcripts that already have punctuation are recognised; apostrophes and hyphens do not count.
+     */
+    public function test_is_punctuated(): void {
+        $this->assertFalse(punctuator::is_punctuated("i don't know if it's well-known"));
+        $this->assertTrue(punctuator::is_punctuated("I don't know, really."));
+        $this->assertTrue(punctuator::is_punctuated('Is it?'));
+        $this->assertTrue(punctuator::is_punctuated('今日はいい天気ですね。'));
+        $this->assertTrue(punctuator::is_punctuated('¿Qué tal'));
+        $this->assertFalse(punctuator::is_punctuated('今日はいい天気ですね'));
+    }
+
+    /**
      * Code fences and quotes around the reply are removed.
      */
     public function test_clean_reply(): void {
@@ -96,6 +108,7 @@ final class punctuator_test extends \advanced_testcase {
         $context = \context_system::instance();
         $this->assertSame('hello world', punctuator::punctuate(' hello world ', 'en-us', $context->id));
         $this->assertSame('', punctuator::punctuate('', 'en-us', $context->id));
+        $this->assertSame('Already punctuated.', punctuator::punctuate('Already punctuated.', 'en-us', $context->id));
     }
 
     /**

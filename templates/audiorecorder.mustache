@@ -71,6 +71,9 @@
 <div class="qtype_aitext_audiosummary qtype_aitext_audiosummary_{{safeid}} {{^haveresponse}}hidden{{/haveresponse}}">
     <div class="qtype_aitext_questionanswered">{{#str}} questionanswered, qtype_aitext {{/str}}</div>
     <button type="button" class="qtype_aitext_retry retry_{{safeid}} btn btn-secondary">{{#str}} retry, qtype_aitext {{/str}}</button>
+    <div class="qtype_aitext_punctuating qtype_aitext_punctuating_{{safeid}} hidden" role="status">
+        {{#pix}} i/loading_small, core {{/pix}} {{#str}} addingpunctuation, qtype_aitext {{/str}}
+    </div>
 </div>
 <div class="qtype_aitext_currentwordcount {{^cancountwords}}hidden{{/cancountwords}}">
     {{#str}} currentwordcount, qtype_aitext {{/str}}: <span class="{{safeid}}_currentwordcount">{{wordcount}}</span>

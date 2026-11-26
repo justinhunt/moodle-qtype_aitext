@@ -33,6 +33,13 @@ class punctuator {
     const MAX_LENGTH = 50000;
 
     /**
+     * @var string Punctuation marks that show a transcript is already punctuated (some browsers, e.g. Edge,
+     * punctuate by themselves). Apostrophes and hyphens are left out because they occur inside words.
+     * Keep in step with PUNCTUATION in amd/src/transcriptmanager.js.
+     */
+    const PUNCTUATION = '/[.,!?;:()\\[\\]{}"«»„“”‹›¡¿،؛؟。、「」『』【】《》]/u';
+
+    /**
      * Is punctuation of audio transcripts enabled on this site?
      *
      * @return bool
@@ -51,7 +58,7 @@ class punctuator {
      */
     public static function punctuate(string $transcript, string $language, int $contextid): string {
         $transcript = trim($transcript);
-        if ($transcript === '' || \core_text::strlen($transcript) > self::MAX_LENGTH) {
+        if ($transcript === '' || \core_text::strlen($transcript) > self::MAX_LENGTH || self::is_punctuated($transcript)) {
             return $transcript;
         }
 
@@ -67,6 +74,16 @@ class punctuator {
 
         $punctuated = self::clean_reply($reply);
         return self::same_words($transcript, $punctuated) ? $punctuated : $transcript;
+    }
+
+    /**
+     * Does the transcript already have punctuation?
+     *
+     * @param string $transcript
+     * @return bool
+     */
+    public static function is_punctuated(string $transcript): bool {
+        return (bool) preg_match(self::PUNCTUATION, $transcript);
     }
 
     /**
